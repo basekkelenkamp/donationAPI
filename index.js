@@ -26,7 +26,7 @@ app.use(express.urlencoded({ extended : true }));
 app.get('/', function(req, res) {
     console.log("End point /")
     res.header("Content-Type", "application/json")
-    res.send("{ \"message\": \"Hello World!\" }")
+    res.send("{ \"message\": \"Welcome to donation API!\" }")
 })
 
 
