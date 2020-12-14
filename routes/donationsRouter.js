@@ -1,7 +1,6 @@
 let express = require('express');
 let Donation = require('../models/donationModel');
 
-
 let routes = function () {
 
     let router = express.Router();
@@ -50,84 +49,101 @@ let routes = function () {
         })
 
         //Get all donations
-        .get(function (req, res) {
-            console.log("GET on collection")
-            Donation.find({}, function (err, donations) {
-                if (err) {
-                    res.status(500).send(err);
+        .get(async (req, res) => {
+
+            try {
+                // pagination
+                const page = parseInt(req.query.start)
+                const limit = parseInt(req.query.limit)
+
+                let donations = await Donation.find()
+                    .limit(limit * 1)
+                    .skip((page - 1) * limit)
+                    .exec()
+
+                const count = await Donation.countDocuments()
+
+                let donationCollection = {
+                    "items": [],
+                    "_links": {
+                        "self": { "href": "http://" + req.headers.host + "/donations" },
+                        "collection": { "href": "http://" + req.headers.host + "/donations" }
+                    }
                 }
-                else {
 
-                    let totalItems = donations.length;
-                    let limit = donations.length;
-                    let totalPages = 1;
-                    let currentPage = 1;
+                for (let donation of donations) {
+                    let donationItem = donation.toJSON()
 
-                    if (req.query.limit != null) {
-                        limit = parseInt(req.query.limit)
-
-                        function totalPagesCount(totalItems, limit) {
-                            return Math.ceil(totalItems / limit);
-                        }
-
-                        totalPages = totalPagesCount(totalItems, limit)
-                        console.log('total pages: ' + totalPages)
+                    donationItem._links =
+                    {
+                        "self": { "href": "http://" + req.headers.host + "/donations/" + donationItem._id },
+                        "collection": { "href": "http://" + req.headers.host + "/donations" }
                     }
 
-                    if (req.query.page != null) {
-                        console.log("current page: " + req.query.page)
-                        currentPage = parseInt(req.query.page)
-
-                        if(req.query.page > totalPages){
-                            return res.status(404).json({ message: 'This page does not exist' });
-                        } 
-                    }
-
-
-                    let donationsCollection = {
-                        "items": [],
-                        "_links": {
-                            "self": { "href": "http://" + req.headers.host + "/donations" },
-                            "collection": { "href": "http://" + req.headers.host + "/donations" }
-                        },
-                        "pagination": {
-                            "currentPage": currentPage,
-                            "currentItems": limit,
-                            "totalPages": totalPages,
-                            "totalItems": totalItems,
-                            "_links": {
-                                "first": {
-                                    "page": 1,
-                                    "href": "http://" + req.headers.host + "/donations?limit=" + limit + "&page" + 1
-                                },
-                                "last": {
-                                    "page": totalPages,
-                                    "href": "http://" + req.headers.host + "/donations?limit=" + limit + "&page" + totalPages
-                                }
-                            }
-                        }
-                    }
-
-                    for (let donation of donations) {
-                        let donationItem = donation.toJSON()
-
-                        donationItem._links = {
-                            "self": { "href": "http://" + req.headers.host + "/donations/" + donationItem._id },
-                            "collection": { "href": "http://" + req.headers.host + "/donations" }
-                        }
-
-                        donationsCollection.items.push(donationItem)
-                    }
-
-                    res.json(donationsCollection);
+                    donationCollection.items.push(donationItem)
                 }
-            })
+
+                donationCollection.pagination = {
+                    "currentPage": page,
+                    "currentItems": donationCollection.items.length,
+                    "totalPages": Math.ceil(count / limit),
+                    "totalItems": count
+                }
+
+                let startUrl = "http://" + req.headers.host + "/donations"
+                let limitUrl = "&limit=" + limit
+                let firstUrl
+                let lastUrl
+                let previousUrl
+                let nextUrl
+
+                if (req.query.start) {
+                    firstUrl = startUrl + "?start=1&limit=" + limit
+                    lastUrl = startUrl + "?start=" + Math.ceil(count / limit) + limitUrl
+
+                    previousUrl = page == 1 ? firstUrl : startUrl + "?start=" + parseInt(page - 1) + limitUrl
+
+                    nextUrl = page > Math.ceil(count / limit) ? lastUrl : startUrl + "?start=" + parseInt(page + 1) + limitUrl
+
+                } else {
+                    firstUrl = startUrl
+                    lastUrl = startUrl
+                    previousUrl = startUrl
+                    nextUrl = startUrl
+                }
+
+
+                donationCollection.pagination._links =
+                {
+                    "first": {
+                        "page": 1,
+                        "href": firstUrl,
+                    },
+                    "last": {
+                        "page": Math.ceil(count / limit),
+                        "href": lastUrl
+                    },
+                    "previous": {
+                        "page": page - 1,
+                        "href": previousUrl
+                    },
+                    "next": {
+                        "page": page + 1,
+                        "href": nextUrl
+                    }
+                }
+
+                res.json(donationCollection)
+
+            } catch (err) {
+                res.status(500).send(err)
+            }
         })
+
         .options(function (req, res) {
             res.header("Allow", "POST,GET,OPTIONS")
             res.header("Access-Control-Allow-Methods", "POST,GET,OPTIONS").send()
-        })
-        ;
+        });
 
 
     router.route('/:id')
@@ -145,12 +161,12 @@ let routes = function () {
                 else {
 
                     let oneDonation = donation.toJSON()
-                    
+
                     oneDonation._links = {
-                            "self": { "href": "http://" + req.headers.host + "/donations/" + req.params.id },
-                            "collection": { "href": "http://" + req.headers.host + "/donations" }
-                        }
-                
+                        "self": { "href": "http://" + req.headers.host + "/donations/" + req.params.id },
+                        "collection": { "href": "http://" + req.headers.host + "/donations" }
+                    }
+
                     res.json(oneDonation);
                 }
             })
@@ -180,7 +196,7 @@ let routes = function () {
                     }
 
                     if (!allRequiredField) {
-                    return res.status(400).send(err);
+                        return res.status(400).send(err);
                     }
 
                     donation.amount = req.body.amount;
